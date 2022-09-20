@@ -12,7 +12,7 @@ from robomaster import robot
 
 import rospy
 import numpy as np
-from std_msgs.msg import Float32, Empty
+from std_msgs.msg import Float32, Empty, ColorRGBA
 from geometry_msgs.msg import Vector3, Twist
 
 # node init
@@ -94,12 +94,16 @@ def callBackCmdVel(data):
         drone.flight.rc(a=-vy, b=vx, c=vz, d=-v_yaw_rate)
 
 
+def callBackRGBLed(data):
+    drone.led.set_led(r=data.r, g=data.g, b=data.b)
+
 
 # subscribers
 # ------------
 rospy.Subscriber("takeoff", Empty, callBackTakeOff)
 rospy.Subscriber("land", Empty, callBackLand)
 rospy.Subscriber("cmd_vel", Twist, callBackCmdVel)
+rospy.Subscriber("rgb_led", ColorRGBA, callBackRGBLed)
 
 # handlers to SDK
 # -----------------
