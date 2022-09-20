@@ -61,8 +61,10 @@ def callBackTakeOff(data):
     global drone_state
     if (drone_state=="LANDED"):
         print("     Taking off ...")
+        drone.led.set_led_breath(freq=2, r=255, g=0, b=0)    
         drone.flight.takeoff().wait_for_completed()
         drone_state="FLYING"
+        drone.led.set_led(r=0, g=255, b=0)    
         print("                ... Flying")
         #time.sleep(0.5)
 
@@ -70,8 +72,10 @@ def callBackLand(data):
     global drone_state
     if (drone_state=="FLYING"):
         print("     Landing ...")
+        drone.led.set_led_breath(freq=2, r=255, g=0, b=0)    
         drone.flight.land().wait_for_completed()
         drone_state="LANDED"
+        drone.led.set_led(r=0, g=0, b=0)    
         print("             ... Landed")
         #time.sleep(0.5)
         
@@ -168,6 +172,8 @@ if __name__ == '__main__':
     drone.flight.sub_attitude(10, sub_attitudeRPY_info_handler)
     drone.flight.sub_imu(10, sub_imu_info_handler)
     
+    
+    drone.led.set_mled_graph('0000000000000000000000000000000000000000000000000000000000000000')
     
     rospy.spin()    
     
