@@ -6,7 +6,7 @@ Created on Tue Sep 20 2022
 @author: Sylvain BERTRAND
 """
 
-import time
+#import time
 import robomaster
 from robomaster import robot
 
@@ -14,6 +14,10 @@ import rospy
 import numpy as np
 from std_msgs.msg import Float32, Empty, ColorRGBA
 from geometry_msgs.msg import Vector3, Twist
+
+import cv2
+from cv_bridge import CvBridge
+from sensor_msgs.msg import Image
 
 # node init
 # --------------
@@ -25,7 +29,7 @@ rospy.init_node('rmtt_driver', anonymous=False)
 # ---------------
 drone = robot.Drone()
 
-frequency = 10.0
+frequency = 100.0
 Ts = 1.0/frequency
 nodeRate = rospy.Rate(frequency)
 
@@ -36,13 +40,16 @@ IP_ADDRESS_STR = rospy.get_param('~IP_ADRESS_STR', "192.168.10.2")
 V_XY_MAX = 30   # betwen 0 and 100
 V_Z_MAX = 60
 V_YAW_RATE_MAX = 30
-
+ACTIVE_FRONT_CAM = True
+FRONT_CAM_FREQ = 50.0
 
 # init global variables
 # ----------------------
 global drone_state
 drone_state = "LANDED"  # LANDED, HOVERFLYING
 
+
+bridge = CvBridge()
 
 
 
@@ -54,6 +61,8 @@ pubForwardTof = rospy.Publisher('fwd_range', Float32, queue_size=10)
 pubRollPitchYawAngle = rospy.Publisher('roll_pitch_yaw_deg', Vector3, queue_size=10)
 pubVel = rospy.Publisher('vel', Vector3, queue_size=10)
 pubAcc = rospy.Publisher('acc', Vector3, queue_size=10)
+pubFrontCam = rospy.Publisher('front_cam', Image, queue_size=10)
+
 
 # call backs for subscribers
 # ----------------------------
@@ -100,6 +109,27 @@ def callBackCmdVel(data):
 
 def callBackRGBLed(data):
     drone.led.set_led(r=data.r, g=data.g, b=data.b)
+
+
+def readFrontCamera(event=None):
+    img = drone.camera.read_cv2_image()
+    #cv2.imshow("Drone", img)
+    #cv2.waitKey(1)
+    image_message = bridge.cv2_to_imgmsg(img, "rgb8")
+    pubFrontCam.publish(image_message)
+    
+    '''
+    cv_image = bridge.imgmsg_to_cv2(image_message, "rgb8")
+    cv2.imshow("Converted CV to ROS to CV", cv_image)
+    cv2.waitKey(1)
+    '''
+    
+# timers
+# --------
+if (ACTIVE_FRONT_CAM):
+    rospy.Timer(rospy.Duration(1.0/FRONT_CAM_FREQ), readFrontCamera)
+
+
 
 
 # subscribers
@@ -172,10 +202,17 @@ if __name__ == '__main__':
     drone.flight.sub_attitude(10, sub_attitudeRPY_info_handler)
     drone.flight.sub_imu(10, sub_imu_info_handler)
     
-    
     drone.led.set_mled_graph('0000000000000000000000000000000000000000000000000000000000000000')
     
+    if (ACTIVE_FRONT_CAM):
+        drone.camera.start_video_stream(display=False)
+        drone.camera.set_fps("high")
+        drone.camera.set_resolution("high")
+        drone.camera.set_bitrate(6)  
+        
+    
     rospy.spin()    
+    
     
     '''
     while not rospy.is_shutdown():
@@ -185,14 +222,26 @@ if __name__ == '__main__':
         
 #        print("ext tof: {0}".format(tof_info))
         
+        if (ACTIVE_FRONT_CAM):
+            img = drone.camera.read_cv2_image()
+            cv2.imshow("Drone", img)
+            cv2.waitKey(1)
+      
+        
         nodeRate.sleep()
     '''
-
+    
+    
+      
+    #cv2.destroyAllWindows()  
 
 
     drone.unsub_tof()
     drone.flight.unsub_attitude()
     drone.flight.unsub_imu()
+
+    if (ACTIVE_FRONT_CAM):
+        drone.camera.stop_video_stream()
 
     drone.close()
 
