@@ -9,10 +9,10 @@ Done:
 - imu acceleration topic
 - linear velocities (to be finished)
 - attitude angle topic
-
+- front cam image topic
 
 Work in progress: 
-- images from cameras
+- camera info
 - led array
 - pads
 - quaternion and transform publication
