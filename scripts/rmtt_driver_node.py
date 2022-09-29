@@ -12,7 +12,7 @@ from robomaster import robot
 
 import rospy
 import numpy as np
-from std_msgs.msg import Float32, Empty, ColorRGBA
+from std_msgs.msg import Int8, Float32, Empty, ColorRGBA
 from geometry_msgs.msg import Vector3, Twist
 
 import cv2
@@ -37,11 +37,13 @@ nodeRate = rospy.Rate(frequency)
 # parameters
 # ------------
 IP_ADDRESS_STR = rospy.get_param('~IP_ADRESS_STR', "192.168.10.2")
-V_XY_MAX = 30   # betwen 0 and 100
+V_XY_MAX = 40   # betwen 0 and 100
 V_Z_MAX = 60
 V_YAW_RATE_MAX = 30
-ACTIVE_FRONT_CAM = True
+ACTIVE_FRONT_CAM = False
 FRONT_CAM_FREQ = 50.0
+ACTIVE_MISSION_PAD = True
+MISSION_PAD_FREQ = 20.0
 
 # init global variables
 # ----------------------
@@ -62,7 +64,9 @@ pubRollPitchYawAngle = rospy.Publisher('roll_pitch_yaw_deg', Vector3, queue_size
 pubVel = rospy.Publisher('vel', Vector3, queue_size=10)
 pubAcc = rospy.Publisher('acc', Vector3, queue_size=10)
 pubFrontCam = rospy.Publisher('front_cam', Image, queue_size=10)
-
+pubMissionPadXYZ = rospy.Publisher('mission_pad/xyz', Vector3, queue_size=10)
+pubMissionPadID = rospy.Publisher('mission_pad/pad_id', Int8, queue_size=10)
+pubMissionPadYawDeg = rospy.Publisher('mission_pad/yaw_deg', Float32, queue_size=10)
 
 # call backs for subscribers
 # ----------------------------
@@ -124,11 +128,30 @@ def readFrontCamera(event=None):
     cv2.waitKey(1)
     '''
     
+def readMissionPadInfo(event=None):
+    padMID = drone.get_status("mid")
+    if (padMID>0):
+        padX = drone.get_status("x")
+        padY = drone.get_status("y")
+        padZ = drone.get_status("z")
+        padPRY = drone.get_status("mpry")
+        padYawDeg = padPRY[1]
+    else:
+        padX = None
+        padY = None
+        padZ = None
+        padYawDeg = None
+    #print("     Mission Pad:  ID {0}  x {1}  y {2}  z {3} yaw_deg{4}".format(padMID, padX, padY, padZ, padYawDeg))
+    pubMissionPadID.publish(Int8(int(padMID)))
+    pubMissionPadYawDeg.publish(Float32(padYawDeg))
+    pubMissionPadXYZ.publish(Vector3(padX, padY, padZ))
+    
+    
+    
 # timers
 # --------
-if (ACTIVE_FRONT_CAM):
-    rospy.Timer(rospy.Duration(1.0/FRONT_CAM_FREQ), readFrontCamera)
-
+#if (ACTIVE_FRONT_CAM):
+#    rospy.Timer(rospy.Duration(1.0/FRONT_CAM_FREQ), readFrontCamera)
 
 
 
@@ -196,6 +219,7 @@ if __name__ == '__main__':
     print("  connexion to "+IP_ADDRESS_STR+" ..... ok")
     drone_version = drone.get_sdk_version()
     print("  drone sdk version: {0}".format(drone_version))
+    print("  Ready to fly!")
     
     
     drone.sub_tof(freq=10, callback=sub_bottom_tof_info_handler)
@@ -209,7 +233,12 @@ if __name__ == '__main__':
         drone.camera.set_fps("high")
         drone.camera.set_resolution("high")
         drone.camera.set_bitrate(6)  
-        
+        rospy.Timer(rospy.Duration(1.0/FRONT_CAM_FREQ), readFrontCamera)
+    
+    if (ACTIVE_MISSION_PAD):
+        drone.flight.mission_pad_on()
+        rospy.Timer(rospy.Duration(1.0/MISSION_PAD_FREQ), readMissionPadInfo)
+    
     
     rospy.spin()    
     
@@ -242,6 +271,8 @@ if __name__ == '__main__':
 
     if (ACTIVE_FRONT_CAM):
         drone.camera.stop_video_stream()
+    if (ACTIVE_MISSION_PAD):
+        drone.flight.mission_pad_off()
 
     drone.close()
 
