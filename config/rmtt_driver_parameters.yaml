@@ -1,0 +1,11 @@
+IP_ADRESS_STR: 192.168.10.2
+
+V_XY_MAX: 40        # between 0 and 100
+V_Z_MAX: 60         # between 0 and 100
+V_YAW_RATE_MAX: 50  # between 0 and 100
+
+ACTIVE_FRONT_CAM: True
+FRONT_CAM_FREQ: 50.0
+
+ACTIVE_MISSION_PAD: True
+MISSION_PAD_FREQ: 20.0

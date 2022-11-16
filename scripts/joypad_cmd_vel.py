@@ -97,6 +97,6 @@ if __name__ == '__main__':
 # -----------------------------------------------------------------------------
     while not rospy.is_shutdown():
         # msg publication
-        #pubCmdVel.publish(cmdVelMsg)
+        pubCmdVel.publish(cmdVelMsg)
         cmdPubRate.sleep()
 # -----------------------------------------------------------------------------

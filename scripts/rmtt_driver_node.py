@@ -15,18 +15,19 @@ import numpy as np
 from std_msgs.msg import Int8, Float32, Empty, ColorRGBA
 from geometry_msgs.msg import Vector3, Twist
 
-import cv2
+#import cv2
 from cv_bridge import CvBridge
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
+
 
 # node init
-# --------------
+# =============================================================================
 rospy.init_node('rmtt_driver', anonymous=False)
 
 
 
 # main variables
-# ---------------
+# =============================================================================
 drone = robot.Drone()
 
 frequency = 100.0
@@ -34,43 +35,52 @@ Ts = 1.0/frequency
 nodeRate = rospy.Rate(frequency)
 
 
-# parameters
-# ------------
+
+# ROS parameters
+# =============================================================================
 IP_ADDRESS_STR = rospy.get_param('~IP_ADRESS_STR', "192.168.10.2")
-V_XY_MAX = 40   # betwen 0 and 100
-V_Z_MAX = 60
-V_YAW_RATE_MAX = 30
-ACTIVE_FRONT_CAM = False
-FRONT_CAM_FREQ = 50.0
-ACTIVE_MISSION_PAD = True
-MISSION_PAD_FREQ = 20.0
+V_XY_MAX = rospy.get_param('~V_XY_MAX', 40)   # betwen 0 and 100
+V_Z_MAX = rospy.get_param('~V_Z_MAX', 60)
+V_YAW_RATE_MAX = rospy.get_param('~V_YAW_RATE_MAX', 50)
+ACTIVE_FRONT_CAM = rospy.get_param('~ACTIVE_FRONT_CAM', True)
+FRONT_CAM_FREQ = rospy.get_param('~FRONT_CAM_FREQ', 50.0)
+ACTIVE_MISSION_PAD = rospy.get_param('~ACTIVE_MISSION_PAD', True)
+MISSION_PAD_FREQ = rospy.get_param('~MISSION_PAD_FREQ', 20.0)
+
+
 
 # init global variables
-# ----------------------
-global drone_state
-drone_state = "LANDED"  # LANDED, HOVERFLYING
-
+# =============================================================================
+global drone_state, battery_state
+drone_state = "LANDED"  # LANDED, FLYING
+battery_state = "NA"  # NA, GOOD, POOR, CRITICAL
 
 bridge = CvBridge()
 
 
 
+# ROS publishers
+# =============================================================================
 
-# publishers
-# ----------------
 pubBottomTof = rospy.Publisher('btm_range', Float32, queue_size=10)
 pubForwardTof = rospy.Publisher('fwd_range', Float32, queue_size=10)
 pubRollPitchYawAngle = rospy.Publisher('roll_pitch_yaw_deg', Vector3, queue_size=10)
 pubVel = rospy.Publisher('vel', Vector3, queue_size=10)
 pubAcc = rospy.Publisher('acc', Vector3, queue_size=10)
-pubFrontCam = rospy.Publisher('front_cam', Image, queue_size=10)
 pubMissionPadXYZ = rospy.Publisher('mission_pad/xyz', Vector3, queue_size=10)
 pubMissionPadID = rospy.Publisher('mission_pad/pad_id', Int8, queue_size=10)
 pubMissionPadYawDeg = rospy.Publisher('mission_pad/yaw_deg', Float32, queue_size=10)
+pubBatterySoc = rospy.Publisher('battery', Float32, queue_size=10)
+pubFrontCam = rospy.Publisher('front_cam/image_raw', Image, queue_size=10)
+pubFrontCamInfo = rospy.Publisher('front_cam/camera_info', CameraInfo, queue_size=10) # WORK IN PROGRESS
 
-# call backs for subscribers
-# ----------------------------
+
+# call backs for ROS subscribers
+# =============================================================================
+
+# -----------------------------------------------------------------------------
 def callBackTakeOff(data):
+# -----------------------------------------------------------------------------
     global drone_state
     if (drone_state=="LANDED"):
         print("     Taking off ...")
@@ -81,7 +91,9 @@ def callBackTakeOff(data):
         print("                ... Flying")
         #time.sleep(0.5)
 
+# -----------------------------------------------------------------------------
 def callBackLand(data):
+# -----------------------------------------------------------------------------
     global drone_state
     if (drone_state=="FLYING"):
         print("     Landing ...")
@@ -92,8 +104,9 @@ def callBackLand(data):
         print("             ... Landed")
         #time.sleep(0.5)
         
-        
+# -----------------------------------------------------------------------------
 def callBackCmdVel(data):
+# -----------------------------------------------------------------------------
     # cmdvel linear(x,y,z)  angular(z)  all assumed to be in [-1,1]
     #roll, pitch, accelerate, yaw:  a,b,c,d [-100,100]
     vx = np.rint(100*np.clip(data.linear.x, -1.0, 1.0))
@@ -110,12 +123,14 @@ def callBackCmdVel(data):
     if (drone_state=="FLYING"):
         drone.flight.rc(a=-vy, b=vx, c=vz, d=-v_yaw_rate)
 
-
+# -----------------------------------------------------------------------------
 def callBackRGBLed(data):
+# -----------------------------------------------------------------------------
     drone.led.set_led(r=data.r, g=data.g, b=data.b)
 
-
+# -----------------------------------------------------------------------------
 def readFrontCamera(event=None):
+# -----------------------------------------------------------------------------
     img = drone.camera.read_cv2_image()
     #cv2.imshow("Drone", img)
     #cv2.waitKey(1)
@@ -128,7 +143,16 @@ def readFrontCamera(event=None):
     cv2.waitKey(1)
     '''
     
+    # WORK IN PROGRESS: to be removed or completed (timestamp)
+    camera_info = CameraInfo()
+    camera_info.header.frame_id = "front_cam"
+    pubFrontCamInfo.publish(camera_info)
+    
+    
+
+# -----------------------------------------------------------------------------
 def readMissionPadInfo(event=None):
+# -----------------------------------------------------------------------------
     padMID = drone.get_status("mid")
     if (padMID>0):
         padX = drone.get_status("x")
@@ -148,25 +172,23 @@ def readMissionPadInfo(event=None):
     
     
     
-# timers
-# --------
-#if (ACTIVE_FRONT_CAM):
-#    rospy.Timer(rospy.Duration(1.0/FRONT_CAM_FREQ), readFrontCamera)
 
-
-
-# subscribers
-# ------------
+# ROS subscribers
+# =============================================================================
 rospy.Subscriber("takeoff", Empty, callBackTakeOff)
 rospy.Subscriber("land", Empty, callBackLand)
 rospy.Subscriber("cmd_vel", Twist, callBackCmdVel)
 rospy.Subscriber("rgb_led", ColorRGBA, callBackRGBLed)
 
-# handlers to SDK
-# -----------------
 
-# ----- bottom TOF sensor (in meters) -----
-def sub_bottom_tof_info_handler(tof_cm):
+
+# handlers to SDK
+# =============================================================================
+
+
+# ----- #bottom TOF sensor (in meters) ----------------------------------------
+def sub_bottom_tof_info_handler(tof_cm):         
+# -----------------------------------------------------------------------------
     
     tof_fwd_cm = drone.sensor.get_ext_tof()
     
@@ -186,14 +208,17 @@ def sub_bottom_tof_info_handler(tof_cm):
             pubForwardTof.publish(Float32(0.0))
        
 
-# ----- roll, pitch, yaw angles (in  deg) -----
+# ----- roll, pitch, yaw angles (in  deg) -------------------------------------
 def sub_attitudeRPY_info_handler(attitute_angles):
+# -----------------------------------------------------------------------------
     yaw, pitch, roll = attitute_angles
     #print("     drone attitude (deg): roll:{0}, pitch:{1}, yaw:{2} ".format(roll, pitch, yaw))
     pubRollPitchYawAngle.publish(Vector3(roll,pitch,yaw))
 
+
 # --- accelerations in body frame (m/s2) and velocity in world frame (m/S  TBC)  ----
 def sub_imu_info_handler(imu_info):
+# -----------------------------------------------------------------------------
     vgx, vgy, vgz, agx, agy, agz = imu_info
     agx = 0.01*agx
     agy = 0.01*agy
@@ -202,10 +227,37 @@ def sub_imu_info_handler(imu_info):
     #print("     drone acceleration (m/s2): agx {0}, agy {1}, agz {2}".format(agx, agy, agz))
     pubVel.publish(Vector3(vgx,vgy,vgz))
     pubAcc.publish(Vector3(agx,agy,agz))
+
+
+# ----- battery level ---------------------------------------------------------
+def sub_battery_info_handler(battery_info):
+# -----------------------------------------------------------------------------
+    global battery_state
+    battery_soc = battery_info
+    pubBatterySoc.publish(Float32(battery_soc))
+    #print("Drone battery: soc {0}".format(battery_soc))
     
+    # warnings for different levels of battery state of charge
+    if (battery_state=="NA"):  # Not Available
+        if (battery_soc<30):
+            battery_state = "MEDIUM"
+            print("  battery: {0}".format(battery_soc))
+    
+    if (battery_state=="MEDIUM"):
+        if (battery_soc<20):
+            battery_state = "POOR"
+            print("  [WARNING]  battery: {0}".format(battery_soc))
+            
+    if (battery_state=="POOR"):
+        if (battery_soc<10):
+            battery_state = "CRITICAL" 
+            print("  [ALERT]  battery: {0}".format(battery_soc))
+
+
+
 
 # main node loop
-# ---------------
+# =============================================================================
 
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
@@ -214,7 +266,6 @@ if __name__ == '__main__':
     robomaster.config.LOCAL_IP_STR = IP_ADDRESS_STR
     
     print("\n**** RMTT ROS DRIVER ****")
-
     drone.initialize()
     print("  connexion to "+IP_ADDRESS_STR+" ..... ok")
     drone_version = drone.get_sdk_version()
@@ -225,6 +276,7 @@ if __name__ == '__main__':
     drone.sub_tof(freq=10, callback=sub_bottom_tof_info_handler)
     drone.flight.sub_attitude(10, sub_attitudeRPY_info_handler)
     drone.flight.sub_imu(10, sub_imu_info_handler)
+    drone.battery.sub_battery_info(freq=1, callback=sub_battery_info_handler)
     
     drone.led.set_mled_graph('0000000000000000000000000000000000000000000000000000000000000000')
     
@@ -268,6 +320,8 @@ if __name__ == '__main__':
     drone.unsub_tof()
     drone.flight.unsub_attitude()
     drone.flight.unsub_imu()
+    drone.battery.unsub_battery_info()
+    
 
     if (ACTIVE_FRONT_CAM):
         drone.camera.stop_video_stream()

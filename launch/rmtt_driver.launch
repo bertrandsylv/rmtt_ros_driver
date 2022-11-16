@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+
+<launch>
+  <node name="rmtt_driver" pkg="rmtt_ros_driver" type="rmtt_driver_node.py" output="screen">
+    <rosparam command="load" file="$(find rmtt_ros_driver)/config/rmtt_driver_parameters.yaml" />
+  </node>
+</launch>
